@@ -18,7 +18,8 @@ const fs = require("fs");
     const originalText = fs.readFileSync(plaintextPath, "utf8").trim();
 
     // Upload plaintext file to encode it as .british
-    await page.setInputFiles("#fileUpload", plaintextPath);
+    const fileInput = await page.$('#fileUpload'); // Get file input element
+    await fileInput.uploadFile(plaintextPath); // Upload the file
     await page.click("#encodeButton");
 
     // Wait for the encoded .british file to be generated
@@ -39,7 +40,8 @@ const fs = require("fs");
     fs.writeFileSync(britishFilePath, encodedData);
 
     // Decode the .british file and verify the output
-    await page.setInputFiles("#fileUpload", britishFilePath);
+    const britishFileInput = await page.$('#fileUpload');
+    await britishFileInput.uploadFile(britishFilePath); // Upload the generated .british file
     await page.click("#decodeButton");
 
     await page.waitForSelector("#output");
@@ -58,7 +60,8 @@ const fs = require("fs");
     const expectedMediaType = "image/png"; // Expected MIME type for the test media
 
     // Upload media file to encode it as .britishm
-    await page.setInputFiles("#fileUpload", mediaPath);
+    const mediaInput = await page.$('#fileUpload'); // Get file input element
+    await mediaInput.uploadFile(mediaPath); // Upload the media file
     await page.click("#encodeButton");
 
     // Wait for the encoded .britishm file to be generated
@@ -79,7 +82,8 @@ const fs = require("fs");
     fs.writeFileSync(britishmFilePath, Buffer.from(encodedMediaData));
 
     // Decode the .britishm file and verify the media type
-    await page.setInputFiles("#fileUpload", britishmFilePath);
+    const mediaInput2 = await page.$('#fileUpload');
+    await mediaInput2.uploadFile(britishmFilePath); // Upload the generated .britishm file
     await page.click("#decodeButton");
 
     const mediaElement = await page.waitForSelector("#mediaOutput img, #mediaOutput video, #mediaOutput audio");
