@@ -109,50 +109,89 @@
         });
 
         // Decode file
-        document.getElementById("decodeButton").addEventListener("click", async () => {
-            const fileInput = document.getElementById("fileInput").files[0];
-            if (!fileInput) {
-                alert("Please upload a .british or .britishm file.");
-                return;
+      document.getElementById("decodeButton").addEventListener("click", async () => {
+    const fileInput = document.getElementById("fileInput").files[0];
+    if (!fileInput) {
+        alert("Please upload a .british or .britishm file.");
+        return;
+    }
+
+    const buffer = await fileInput.arrayBuffer();
+    const data = new Uint8Array(buffer);
+
+    const length = data[0] + (data[1] << 8);
+    const iv = data.slice(2, 18);
+    const encryptedData = data.slice(18, 18 + length);
+
+    try {
+        const decryptedData = await decrypt(encryptedData, iv);
+        const signature = decoder.decode(decryptedData.slice(0, 5));
+
+        if (signature === "BRSH") {
+            // Decode text file
+            const content = decoder.decode(decryptedData.slice(5));
+            document.getElementById("output").textContent = content;
+            document.getElementById("mediaOutput").innerHTML = "";
+        } else if (signature === "BRSHM") {
+            // Decode media file
+            const mediaContent = decryptedData.slice(5);
+            const blob = new Blob([mediaContent]);
+
+            // Infer MIME type from file signature
+            const mimeType = inferMimeType(mediaContent);
+
+            if (mimeType.startsWith("image/")) {
+                const img = document.createElement("img");
+                img.src = URL.createObjectURL(blob);
+                img.alt = "Decrypted Image";
+                img.style.maxWidth = "100%";
+                document.getElementById("mediaOutput").innerHTML = "";
+                document.getElementById("mediaOutput").appendChild(img);
+            } else if (mimeType.startsWith("video/")) {
+                const video = document.createElement("video");
+                video.src = URL.createObjectURL(blob);
+                video.controls = true;
+                video.style.maxWidth = "100%";
+                document.getElementById("mediaOutput").innerHTML = "";
+                document.getElementById("mediaOutput").appendChild(video);
+            } else if (mimeType.startsWith("audio/")) {
+                const audio = document.createElement("audio");
+                audio.src = URL.createObjectURL(blob);
+                audio.controls = true;
+                document.getElementById("mediaOutput").innerHTML = "";
+                document.getElementById("mediaOutput").appendChild(audio);
+            } else {
+                alert("Unsupported media type. Cannot display content.");
             }
+            document.getElementById("output").textContent = "";
+        } else {
+            alert("Invalid file signature.");
+        }
+    } catch (error) {
+        console.error(error);
+        alert("Failed to decode the file.");
+    }
+});
 
-            const buffer = await fileInput.arrayBuffer();
-            const data = new Uint8Array(buffer);
+// Helper function to infer MIME type from file signature
+function inferMimeType(content) {
+    const signatures = {
+        "image/jpeg": [0xFF, 0xD8, 0xFF],
+        "image/png": [0x89, 0x50, 0x4E, 0x47],
+        "image/gif": [0x47, 0x49, 0x46],
+        "video/mp4": [0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70],
+        "audio/mpeg": [0xFF, 0xFB],
+        "audio/wav": [0x52, 0x49, 0x46, 0x46],
+    };
 
-            const length = data[0] + (data[1] << 8);
-            const iv = data.slice(2, 18);
-            const encryptedData = data.slice(18, 18 + length);
+    for (const [mimeType, signature] of Object.entries(signatures)) {
+        if (content.slice(0, signature.length).every((byte, i) => byte === signature[i])) {
+            return mimeType;
+        }
+    }
+    return "application/octet-stream"; // Default unknown type
+}
 
-            try {
-                const decryptedData = await decrypt(encryptedData, iv);
-                const signature = decoder.decode(decryptedData.slice(0, 5));
-
-                if (signature === "BRSH") {
-                    const content = decoder.decode(decryptedData.slice(5));
-                    document.getElementById("output").textContent = content;
-                    document.getElementById("mediaOutput").innerHTML = "";
-                } else if (signature === "BRSHM") {
-                    const mediaContent = decryptedData.slice(5);
-                    const blob = new Blob([mediaContent]);
-                    const mediaURL = URL.createObjectURL(blob);
-
-                    const mediaTag = fileInput.type.startsWith("image")
-                        ? `<img src="${mediaURL}" alt="Media Content" style="max-width: 100%;">`
-                        : fileInput.type.startsWith("video")
-                        ? `<video controls src="${mediaURL}" style="max-width: 100%;"></video>`
-                        : fileInput.type.startsWith("audio")
-                        ? `<audio controls src="${mediaURL}"></audio>`
-                        : "Unsupported media type";
-
-                    document.getElementById("mediaOutput").innerHTML = mediaTag;
-                    document.getElementById("output").textContent = "";
-                } else {
-                    alert("Invalid file signature.");
-                }
-            } catch (error) {
-                alert("Failed to decode the file.");
-            }
-        });
     </script>
 </body>
 </html>
