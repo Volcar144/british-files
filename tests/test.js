@@ -2,7 +2,10 @@ const puppeteer = require("puppeteer");
 const fs = require("fs");
 
 (async () => {
-    const browser = await puppeteer.launch();
+    const browser = await puppeteer.launch({
+        headless: true, // Ensure this is set to 'true' for non-interactive mode
+        args: ['--no-sandbox', '--disable-setuid-sandbox'] // Add the no-sandbox flag
+    });
     const page = await browser.newPage();
 
     const localFilePath = `file://${__dirname}/../index.html`;
