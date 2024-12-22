@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Encrypted British File Processor</title>
+    <title>British File Processor</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -16,113 +16,141 @@
     </style>
 </head>
 <body>
-    <h1>Encrypted British File Processor</h1>
+    <h1>British File Processor</h1>
 
-    <h2>Encode Markdown into .british</h2>
-    <textarea id="markdownInput" rows="8" cols="50" placeholder="Enter Markdown text here..."></textarea>
-    <button id="encodeButton">Encode to .british</button>
+    <h2>Encode Text into .british</h2>
+    <textarea id="textInput" rows="8" cols="50" placeholder="Enter text here..."></textarea>
+    <button id="encodeTextButton">Encode to .british</button>
 
-    <h2>Decode .british File</h2>
-    <input type="file" id="fileInput" accept=".british">
+    <h2>Encode Media into .britishm</h2>
+    <input type="file" id="mediaInput" accept="image/*,video/*,audio/*">
+    <button id="encodeMediaButton">Encode to .britishm</button>
+
+    <h2>Decode British Files</h2>
+    <input type="file" id="fileInput" accept=".british,.britishm">
     <button id="decodeButton">Decode File</button>
     <pre id="output" style="white-space: pre-wrap; background: #f4f4f4; padding: 10px;"></pre>
+    <div id="mediaOutput"></div>
 
     <script>
         const encoder = new TextEncoder();
         const decoder = new TextDecoder();
-        const iv = encoder.encode("Initialization123"); // 16 bytes for AES
 
-        // Generate encryption key with random numbers
-        const randomNumbers = Math.floor(1000 + Math.random() * 9000); // 4-digit random number
+        const randomNumbers = Math.floor(1000 + Math.random() * 9000); // Random 4-digit number
         const baseKey = `BritishLove${randomNumbers}`;
-        let cryptoKey; // Placeholder for derived key
+        let cryptoKey;
 
-        // Derive a valid AES key using SHA-256
+        // Derive encryption key
         async function deriveKey(password) {
             const hash = await crypto.subtle.digest("SHA-256", encoder.encode(password));
-            return hash; // 32-byte key for AES-256
+            return hash; // 32-byte key
         }
 
-        // Set the encryption key
+        // Set the key
         deriveKey(baseKey).then((key) => {
-            cryptoKey = key; // Set derived key globally
-            console.log("Encryption Key Set:", baseKey); // Display key for debugging
+            cryptoKey = key;
+            console.log("Encryption Key Set:", baseKey);
         });
 
-        // Encrypt function
+        // Encrypt
         async function encrypt(data) {
             const key = await crypto.subtle.importKey("raw", cryptoKey, { name: "AES-CBC" }, false, ["encrypt"]);
+            const iv = crypto.getRandomValues(new Uint8Array(16));
             const encrypted = await crypto.subtle.encrypt({ name: "AES-CBC", iv }, key, data);
-            return new Uint8Array(encrypted);
+            return { encryptedData: new Uint8Array(encrypted), iv };
         }
 
-        // Decrypt function
-        async function decrypt(data) {
+        // Decrypt
+        async function decrypt(data, iv) {
             const key = await crypto.subtle.importKey("raw", cryptoKey, { name: "AES-CBC" }, false, ["decrypt"]);
             const decrypted = await crypto.subtle.decrypt({ name: "AES-CBC", iv }, key, data);
             return new Uint8Array(decrypted);
         }
 
-        // Encode Markdown into .british
-        document.getElementById("encodeButton").addEventListener("click", async () => {
-            const markdown = document.getElementById("markdownInput").value;
-            if (!markdown) {
-                alert("Please enter Markdown text.");
+        // Encode text
+        document.getElementById("encodeTextButton").addEventListener("click", async () => {
+            const text = document.getElementById("textInput").value;
+            if (!text) {
+                alert("Please enter text.");
                 return;
             }
 
-            const content = encoder.encode(markdown);
-            const signature = encoder.encode("BRSH");
+            const content = encoder.encode(text);
+            const signature = encoder.encode("BRSH"); // Signature for text
+            const { encryptedData, iv } = await encrypt(new Uint8Array([...signature, ...content]));
+            const header = new Uint8Array([encryptedData.length & 0xFF, (encryptedData.length >> 8) & 0xFF, ...iv]);
 
-            // Encrypt signature and content
-            const encryptedData = await encrypt(new Uint8Array([...signature, ...content]));
-            const length = encryptedData.length;
-
-            // Construct file header (2 bytes for length)
-            const header = new Uint8Array([length & 0xFF, (length >> 8) & 0xFF]);
-
-            // Combine header and encrypted data
             const fileData = new Blob([header, encryptedData]);
-
-            // Download as .british file
             const link = document.createElement("a");
             link.href = URL.createObjectURL(fileData);
             link.download = "output.british";
             link.click();
         });
 
-        // Decode .british file
-        document.getElementById("decodeButton").addEventListener("click", async () => {
-            const fileInput = document.getElementById("fileInput");
-            if (!fileInput.files.length) {
-                alert("Please upload a .british file.");
+        // Encode media
+        document.getElementById("encodeMediaButton").addEventListener("click", async () => {
+            const fileInput = document.getElementById("mediaInput").files[0];
+            if (!fileInput) {
+                alert("Please upload a media file.");
                 return;
             }
 
-            const file = fileInput.files[0];
-            const buffer = await file.arrayBuffer();
+            const arrayBuffer = await fileInput.arrayBuffer();
+            const signature = encoder.encode("BRSHM"); // Signature for media
+            const content = new Uint8Array(arrayBuffer);
+            const { encryptedData, iv } = await encrypt(new Uint8Array([...signature, ...content]));
+            const header = new Uint8Array([encryptedData.length & 0xFF, (encryptedData.length >> 8) & 0xFF, ...iv]);
+
+            const fileData = new Blob([header, encryptedData]);
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(fileData);
+            link.download = "output.britishm";
+            link.click();
+        });
+
+        // Decode file
+        document.getElementById("decodeButton").addEventListener("click", async () => {
+            const fileInput = document.getElementById("fileInput").files[0];
+            if (!fileInput) {
+                alert("Please upload a .british or .britishm file.");
+                return;
+            }
+
+            const buffer = await fileInput.arrayBuffer();
             const data = new Uint8Array(buffer);
 
-            // Read header
             const length = data[0] + (data[1] << 8);
-            const encryptedData = data.slice(2, 2 + length);
+            const iv = data.slice(2, 18);
+            const encryptedData = data.slice(18, 18 + length);
 
             try {
-                // Decrypt data
-                const decryptedData = await decrypt(encryptedData);
-                const signature = decoder.decode(decryptedData.slice(0, 4));
-                const content = decoder.decode(decryptedData.slice(4));
+                const decryptedData = await decrypt(encryptedData, iv);
+                const signature = decoder.decode(decryptedData.slice(0, 5));
 
-                // Verify signature
-                if (signature !== "BRSH") {
-                    alert("Invalid .british file.");
-                    return;
+                if (signature === "BRSH") {
+                    const content = decoder.decode(decryptedData.slice(5));
+                    document.getElementById("output").textContent = content;
+                    document.getElementById("mediaOutput").innerHTML = "";
+                } else if (signature === "BRSHM") {
+                    const mediaContent = decryptedData.slice(5);
+                    const blob = new Blob([mediaContent]);
+                    const mediaURL = URL.createObjectURL(blob);
+
+                    const mediaTag = fileInput.type.startsWith("image")
+                        ? `<img src="${mediaURL}" alt="Media Content" style="max-width: 100%;">`
+                        : fileInput.type.startsWith("video")
+                        ? `<video controls src="${mediaURL}" style="max-width: 100%;"></video>`
+                        : fileInput.type.startsWith("audio")
+                        ? `<audio controls src="${mediaURL}"></audio>`
+                        : "Unsupported media type";
+
+                    document.getElementById("mediaOutput").innerHTML = mediaTag;
+                    document.getElementById("output").textContent = "";
+                } else {
+                    alert("Invalid file signature.");
                 }
-
-                // Display decoded content
-                document.getElementById("output").textContent = content;
             } catch (error) {
-                alert("Failed to decrypt file. Ensure the file is valid.");
+                alert("Failed to decode the file.");
             }
         });
     </script>
