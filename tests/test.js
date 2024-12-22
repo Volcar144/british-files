@@ -17,8 +17,16 @@ const fs = require("fs");
     const plaintextPath = `${__dirname}/test-files/plaintext.txt`;
     const originalText = fs.readFileSync(plaintextPath, "utf8").trim();
 
-    // Upload plaintext file to encode it as .british
+    // Wait for the file input to be available
+    await page.waitForSelector('#fileUpload'); // Ensure the file input element is on the page
     const fileInput = await page.$('#fileUpload'); // Get file input element
+
+    if (!fileInput) {
+        console.error("File input element not found!");
+        process.exit(1);
+    }
+
+    // Upload plaintext file to encode it as .british
     await fileInput.uploadFile(plaintextPath); // Upload the file
     await page.click("#encodeButton");
 
@@ -60,7 +68,8 @@ const fs = require("fs");
     const expectedMediaType = "image/png"; // Expected MIME type for the test media
 
     // Upload media file to encode it as .britishm
-    const mediaInput = await page.$('#fileUpload'); // Get file input element
+    await page.waitForSelector('#fileUpload'); // Ensure the file input is ready
+    const mediaInput = await page.$('#fileUpload');
     await mediaInput.uploadFile(mediaPath); // Upload the media file
     await page.click("#encodeButton");
 
@@ -103,3 +112,4 @@ const fs = require("fs");
     await browser.close();
     process.exit(0);
 })();
+
