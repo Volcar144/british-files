@@ -1,104 +1,88 @@
-const puppeteer = require("puppeteer");
-const fs = require("fs");
 
-(async () => {
-    const browser = await puppeteer.launch({
-        headless: true, // Ensure this is set to 'true' for non-interactive mode
-        args: ['--no-sandbox', '--disable-setuid-sandbox'] // Add the no-sandbox flag
-    });
-    const page = await browser.newPage();
-
-    const localFilePath = `file://${__dirname}/../index.html`;
-    await page.goto(localFilePath);
-
-    /** Step 1: Test encoding and decoding for .british files */
-    console.log("Testing .british encoding and decoding...");
-
-    const plaintextPath = `${__dirname}/test-files/plaintext.txt`;
-    const originalText = fs.readFileSync(plaintextPath, "utf8").trim();
-
-    // Upload plaintext file to encode it as .british
-    const fileInput = await page.$('#fileUpload'); // Get file input element
-    await fileInput.uploadFile(plaintextPath); // Upload the file
-    await page.click("#encodeButton");
-
-    // Wait for the encoded .british file to be generated
-    const britishFileDownload = await page.evaluate(() => {
-        return new Promise((resolve) => {
-            const link = document.querySelector("#downloadLink");
-            link.addEventListener("click", () => resolve(link.href));
-            link.click();
-        });
-    });
-
-    // Download and save the .british file locally
-    const britishFilePath = `${__dirname}/test-files/generated.british`;
-    const encodedData = await page.evaluate(async (url) => {
-        const response = await fetch(url);
-        return await response.text();
-    }, britishFileDownload);
-    fs.writeFileSync(britishFilePath, encodedData);
-
-    // Decode the .british file and verify the output
-    await page.setInputFiles("#fileUpload", britishFilePath);
-    await page.click("#decodeButton");
-
-    await page.waitForSelector("#output");
-    const decodedText = await page.$eval("#output", el => el.textContent.trim());
-
-    if (decodedText !== originalText) {
-        console.error("Test failed: Decoded text does not match original plaintext.");
-        process.exit(1);
+       // Decode file
+      document.getElementById("decodeButton").addEventListener("click", async () => {
+    const fileInput = document.getElementById("fileInput").files[0];
+    if (!fileInput) {
+        alert("Please upload a .british or .britishm file.");
+        return;
     }
-    console.log(".british encoding and decoding passed");
 
-    /** Step 2: Test encoding and decoding for .britishm files */
-    console.log("Testing .britishm encoding and decoding...");
+    const buffer = await fileInput.arrayBuffer();
+    const data = new Uint8Array(buffer);
 
-    const mediaPath = `${__dirname}/test-files/media.png`;
-    const expectedMediaType = "image/png"; // Expected MIME type for the test media
+    const length = data[0] + (data[1] << 8);
+    const iv = data.slice(2, 18);
+    const encryptedData = data.slice(18, 18 + length);
 
-    // Upload media file to encode it as .britishm
-    const mediaInput = await page.$('#fileUpload'); // Get file input element
-    await mediaInput.uploadFile(mediaPath); // Upload the media file
-    await page.click("#encodeButton");
+    try {
+        const decryptedData = await decrypt(encryptedData, iv);
+        const signature = decoder.decode(decryptedData.slice(0, 5));
 
-    // Wait for the encoded .britishm file to be generated
-    const britishmFileDownload = await page.evaluate(() => {
-        return new Promise((resolve) => {
-            const link = document.querySelector("#downloadLink");
-            link.addEventListener("click", () => resolve(link.href));
-            link.click();
-        });
-    });
+        if (signature === "BRSH") {
+            // Decode text file
+            const content = decoder.decode(decryptedData.slice(5));
+            document.getElementById("output").textContent = content;
+            document.getElementById("mediaOutput").innerHTML = "";
+        } else if (signature === "BRSHM") {
+            // Decode media file
+            const mediaContent = decryptedData.slice(5);
+            const blob = new Blob([mediaContent]);
 
-    // Download and save the .britishm file locally
-    const britishmFilePath = `${__dirname}/test-files/generated.britishm`;
-    const encodedMediaData = await page.evaluate(async (url) => {
-        const response = await fetch(url);
-        return await response.arrayBuffer();
-    }, britishmFileDownload);
-    fs.writeFileSync(britishmFilePath, Buffer.from(encodedMediaData));
+            // Infer MIME type from file signature
+            const mimeType = inferMimeType(mediaContent);
 
-    // Decode the .britishm file and verify the media type
-    await page.setInputFiles("#fileUpload", britishmFilePath);
-    await page.click("#decodeButton");
-
-    const mediaElement = await page.waitForSelector("#mediaOutput img, #mediaOutput video, #mediaOutput audio");
-    const mediaSrc = await mediaElement.evaluate(el => el.src);
-
-    const mediaResponse = await page.evaluate(async (src) => {
-        const response = await fetch(src);
-        return response.headers.get("content-type");
-    }, mediaSrc);
-
-    if (mediaResponse !== expectedMediaType) {
-        console.error(`Test failed: Decoded media type mismatch. Expected '${expectedMediaType}' but got '${mediaResponse}'`);
-        process.exit(1);
+            if (mimeType.startsWith("image/")) {
+                const img = document.createElement("img");
+                img.src = URL.createObjectURL(blob);
+                img.alt = "Decrypted Image";
+                img.style.maxWidth = "100%";
+                document.getElementById("mediaOutput").innerHTML = "";
+                document.getElementById("mediaOutput").appendChild(img);
+            } else if (mimeType.startsWith("video/")) {
+                const video = document.createElement("video");
+                video.src = URL.createObjectURL(blob);
+                video.controls = true;
+                video.style.maxWidth = "100%";
+                document.getElementById("mediaOutput").innerHTML = "";
+                document.getElementById("mediaOutput").appendChild(video);
+            } else if (mimeType.startsWith("audio/")) {
+                const audio = document.createElement("audio");
+                audio.src = URL.createObjectURL(blob);
+                audio.controls = true;
+                document.getElementById("mediaOutput").innerHTML = "";
+                document.getElementById("mediaOutput").appendChild(audio);
+            } else {
+                alert("Unsupported media type. Cannot display content.");
+            }
+            document.getElementById("output").textContent = "";
+        } else {
+            alert("Invalid file signature.");
+        }
+    } catch (error) {
+        console.error(error);
+        alert("Failed to decode the file.");
     }
-    console.log(".britishm encoding and decoding passed");
+});
 
-    await browser.close();
-    process.exit(0);
-})();
+// Helper function to infer MIME type from file signature
+function inferMimeType(content) {
+    const signatures = {
+        "image/jpeg": [0xFF, 0xD8, 0xFF],
+        "image/png": [0x89, 0x50, 0x4E, 0x47],
+        "image/gif": [0x47, 0x49, 0x46],
+        "video/mp4": [0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70],
+        "audio/mpeg": [0xFF, 0xFB],
+        "audio/wav": [0x52, 0x49, 0x46, 0x46],
+    };
 
+    for (const [mimeType, signature] of Object.entries(signatures)) {
+        if (content.slice(0, signature.length).every((byte, i) => byte === signature[i])) {
+            return mimeType;
+        }
+    }
+    return "application/octet-stream"; // Default unknown type
+}
+
+    </script>
+</body>
+</html>
