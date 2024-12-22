@@ -30,7 +30,6 @@
     <script>
         const encoder = new TextEncoder();
         const decoder = new TextDecoder();
-        const iv = encoder.encode("Initialization123"); // 16 bytes for AES
 
         // Generate encryption key with random numbers
         const randomNumbers = Math.floor(1000 + Math.random() * 9000); // 4-digit random number
@@ -46,18 +45,19 @@
         // Set the encryption key
         deriveKey(baseKey).then((key) => {
             cryptoKey = key; // Set derived key globally
-            console.log("Encryption Key Set:", baseKey); // Display key for debugging
+            console.log("Encryption Key Set:", baseKey); // Display key for debugging (remove for production)
         });
 
         // Encrypt function
         async function encrypt(data) {
             const key = await crypto.subtle.importKey("raw", cryptoKey, { name: "AES-CBC" }, false, ["encrypt"]);
+            const iv = crypto.getRandomValues(new Uint8Array(16)); // Generate random IV
             const encrypted = await crypto.subtle.encrypt({ name: "AES-CBC", iv }, key, data);
-            return new Uint8Array(encrypted);
+            return { encryptedData: new Uint8Array(encrypted), iv }; // Return both encrypted data and IV
         }
 
         // Decrypt function
-        async function decrypt(data) {
+        async function decrypt(data, iv) {
             const key = await crypto.subtle.importKey("raw", cryptoKey, { name: "AES-CBC" }, false, ["decrypt"]);
             const decrypted = await crypto.subtle.decrypt({ name: "AES-CBC", iv }, key, data);
             return new Uint8Array(decrypted);
@@ -72,14 +72,14 @@
             }
 
             const content = encoder.encode(markdown);
-            const signature = encoder.encode("BRSH");
+            const signature = encoder.encode("BRSH"); // 4-byte signature
 
             // Encrypt signature and content
-            const encryptedData = await encrypt(new Uint8Array([...signature, ...content]));
+            const { encryptedData, iv } = await encrypt(new Uint8Array([...signature, ...content]));
             const length = encryptedData.length;
 
-            // Construct file header (2 bytes for length)
-            const header = new Uint8Array([length & 0xFF, (length >> 8) & 0xFF]);
+            // Construct file header (2 bytes for length + 16 bytes for IV)
+            const header = new Uint8Array([length & 0xFF, (length >> 8) & 0xFF, ...iv]);
 
             // Combine header and encrypted data
             const fileData = new Blob([header, encryptedData]);
@@ -103,13 +103,14 @@
             const buffer = await file.arrayBuffer();
             const data = new Uint8Array(buffer);
 
-            // Read header
+            // Read header (2 bytes for length + 16 bytes for IV)
             const length = data[0] + (data[1] << 8);
-            const encryptedData = data.slice(2, 2 + length);
+            const iv = data.slice(2, 18); // Extract IV (16 bytes)
+            const encryptedData = data.slice(18, 18 + length);
 
             try {
                 // Decrypt data
-                const decryptedData = await decrypt(encryptedData);
+                const decryptedData = await decrypt(encryptedData, iv);
                 const signature = decoder.decode(decryptedData.slice(0, 4));
                 const content = decoder.decode(decryptedData.slice(4));
 
